@@ -24,6 +24,36 @@ const createMockBx24 = () => {
 		},
 	]
 
+	const mockTasks = [
+		{
+			id: "101",
+			title: "Разработать главный экран",
+			responsibleId: "1",
+			timeEstimate: "7200", // 2 hours
+			timeSpentInLogs: "9000", // 2.5 hours
+			createdDate: "2024-05-01T10:00:00Z",
+			closedDate: "2024-05-03T15:00:00Z",
+		},
+		{
+			id: "102",
+			title: "Написать API для отчетов",
+			responsibleId: "2",
+			timeEstimate: "14400", // 4 hours
+			timeSpentInLogs: "12600", // 3.5 hours
+			createdDate: "2024-05-02T11:00:00Z",
+			closedDate: "2024-05-05T18:00:00Z",
+		},
+		{
+			id: "103",
+			title: "Тестирование модуля авторизации",
+			responsibleId: "1",
+			timeEstimate: "3600", // 1 hour
+			timeSpentInLogs: "4500", // 1.25 hours
+			createdDate: "2024-05-04T09:00:00Z",
+			closedDate: "2024-05-04T12:00:00Z",
+		},
+	]
+
 	return {
 		callMethod: (method, params, callback) => {
 			console.log(`[MOCK BX24] Method: ${method}, Params:`, params)
@@ -32,6 +62,8 @@ const createMockBx24 = () => {
 
 			if (method === "user.get") {
 				result = mockUsers
+			} else if (method === "tasks.task.list") {
+				result = { tasks: mockTasks }
 			} else {
 				error = () => ({
 					error: "METHOD_NOT_FOUND",
@@ -43,7 +75,7 @@ const createMockBx24 = () => {
 			setTimeout(() => {
 				if (callback) {
 					callback({
-						data: () => result,
+						data: () => (result ? result.tasks || result : []),
 						error: () => error,
 					})
 				}

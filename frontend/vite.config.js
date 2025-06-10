@@ -57,6 +57,10 @@ export default defineConfig(({ command }) => {
 					changeOrigin: true,
 				},
 			},
+			// Enable polling for file changes to fix HMR in Docker on some systems.
+			watch: {
+				usePolling: true,
+			},
 		},
 	}
 })

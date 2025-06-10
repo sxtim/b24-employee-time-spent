@@ -1,6 +1,8 @@
 <template>
 	<v-card>
-		<v-card-title class="pb-4">Отчет по затраченному времени сотрудника</v-card-title>
+		<v-card-title class="pb-4"
+			>Отчет по затраченному времени сотрудника</v-card-title
+		>
 		<v-card-text>
 			<!-- Filters -->
 			<v-row>
@@ -15,7 +17,17 @@
 						clearable
 						chips
 						closable-chips
-					></v-autocomplete>
+					>
+						<template v-slot:item="{ props, item }">
+							<v-list-item v-bind="props" :title="item.raw.name">
+								<template v-slot:prepend>
+									<v-checkbox-btn
+										:model-value="selectedEmployees.includes(item.raw.ID)"
+									></v-checkbox-btn>
+								</template>
+							</v-list-item>
+						</template>
+					</v-autocomplete>
 				</v-col>
 				<v-col cols="12" sm="6" md="3">
 					<v-select
@@ -249,32 +261,33 @@ const fetchReportData = async () => {
 		BX24.callMethod(
 			"tasks.task.list",
 			{
-				order: { ID: "desc" },
-				filter: filter,
 				select: [
 					"ID",
 					"TITLE",
 					"RESPONSIBLE_ID",
-					"TIME_ESTIMATE",
-					"TIME_SPENT_IN_LOGS",
 					"CREATED_DATE",
 					"CLOSED_DATE",
-					"STATUS",
+					"TIME_ESTIMATE",
+					"TIME_SPENT_IN_LOGS",
 				],
+				filter: filter,
 			},
-			result => {
-				if (result.error()) {
-					console.error(result.error())
-					error.value = "Не удалось загрузить задачи."
+			res => {
+				const B24error = res.error ? res.error() : null
+				if (B24error) {
+					console.error("B24 Error:", B24error)
+					error.value = `Не удалось загрузить задачи. ${
+						B24error.error_description || ""
+					}`
 				} else {
-					// The new API returns tasks under a 'tasks' property
-					rawTasks.value = result.data().tasks || []
+					// The API returns tasks under a 'tasks' property in the data object
+					rawTasks.value = res.data().tasks || []
 				}
 				loading.value = false
 			}
 		)
-	} catch (err) {
-		console.error(err)
+	} catch (e) {
+		console.error("Failed to call B24 method:", e)
 		error.value = "Ошибка при запросе задач."
 		loading.value = false
 	}
