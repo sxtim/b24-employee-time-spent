@@ -1,6 +1,6 @@
 <template>
 	<v-card>
-		<v-card-title class="pb-4">Отчет по затраченному времени</v-card-title>
+		<v-card-title class="pb-4">Отчет по затраченному времени сотрудника</v-card-title>
 		<v-card-text>
 			<!-- Filters -->
 			<v-row>
