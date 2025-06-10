@@ -2,15 +2,14 @@
 	<v-app>
 		<v-main>
 			<v-container>
-				<h1 class="mb-4">Bitrix24 Employee List</h1>
-				<EmployeeList />
+				<TimeReport />
 			</v-container>
 		</v-main>
 	</v-app>
 </template>
 
 <script setup>
-import EmployeeList from "./components/EmployeeList.vue"
+import TimeReport from "./components/TimeReport.vue"
 </script>
 
 <style>
