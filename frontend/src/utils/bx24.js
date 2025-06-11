@@ -59,11 +59,14 @@ const createMockBx24 = () => {
 			console.log(`[MOCK BX24] Method: ${method}, Params:`, params)
 			let result = null
 			let error = null
+			let total = 0
 
 			if (method === "user.get") {
 				result = mockUsers
 			} else if (method === "tasks.task.list") {
-				result = { tasks: mockTasks }
+				const start = params.start || 0
+				result = { tasks: mockTasks.slice(start, start + 50) }
+				total = mockTasks.length
 			} else {
 				error = () => ({
 					error: "METHOD_NOT_FOUND",
@@ -77,6 +80,7 @@ const createMockBx24 = () => {
 					callback({
 						data: () => (result ? result.tasks || result : []),
 						error: () => error,
+						total: () => total,
 					})
 				}
 			}, 500)

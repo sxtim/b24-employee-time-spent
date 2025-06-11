@@ -59,7 +59,7 @@
 					></v-text-field>
 				</v-col>
 				<v-col cols="12" md="2" class="d-flex align-center">
-					<v-btn color="primary" @click="fetchReportData" block
+					<v-btn color="primary" @click="generateNewReport" block
 						>Сформировать</v-btn
 					>
 				</v-col>
@@ -98,6 +98,17 @@
 					</v-footer>
 				</template>
 			</v-data-table>
+
+			<!-- Pagination -->
+			<v-row justify="center" class="mt-4">
+				<v-col cols="auto">
+					<v-pagination
+						v-model="currentPage"
+						:length="pageCount"
+						:total-visible="7"
+					></v-pagination>
+				</v-col>
+			</v-row>
 		</v-card-text>
 
 		<v-alert v-if="error" type="error" dense>
@@ -107,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, ref } from "vue"
+import { computed, inject, onMounted, ref, watch } from "vue"
 
 // --- Helper Functions ---
 const formatHours = seconds => {
@@ -128,6 +139,11 @@ const getDaysBetween = (startDate, endDate) => {
 const loading = ref(false)
 const error = ref(null)
 const BX24 = inject("BX24")
+
+// Pagination State
+const currentPage = ref(1)
+const totalFromApi = ref(0)
+const pageSize = 50 // Bitrix24 API returns 50 items per page by default
 
 // Filters and Mode
 const reportMode = ref("byTask") // 'byTask' or 'byEmployee'
@@ -212,28 +228,46 @@ const totalActual = computed(() => {
 	return formatHours(totalSeconds)
 })
 
-const totalTasks = computed(() => rawTasks.value.length)
+const totalTasks = computed(() => totalFromApi.value)
 
-const headersByTask = [
+const pageCount = computed(() => {
+	if (totalFromApi.value === 0) return 1
+	return Math.ceil(totalFromApi.value / pageSize)
+})
+
+const headersByTask = ref([
 	{ title: "Задача", key: "task" },
 	{ title: "Сотрудник", key: "employee" },
 	{ title: "План (ч)", key: "planned" },
 	{ title: "Факт (ч)", key: "actual" },
 	{ title: "Дней на выполнение", key: "days" },
-]
+])
 
-const headersByEmployee = [
+const headersByEmployee = ref([
 	{ title: "Сотрудник", key: "employee" },
 	{ title: "Задачи", key: "taskCount" },
 	{ title: "План (ч)", key: "planned" },
 	{ title: "Факт (ч)", key: "actual" },
-]
+])
 
 const currentHeaders = computed(() => {
-	return reportMode.value === "byTask" ? headersByTask : headersByEmployee
+	return reportMode.value === "byTask"
+		? headersByTask.value
+		: headersByEmployee.value
 })
 
 // --- Methods ---
+
+const generateNewReport = () => {
+	// Reset to page 1 for a new report.
+	// If already on page 1, fetch directly. Otherwise, the watcher will trigger the fetch.
+	if (currentPage.value === 1) {
+		fetchReportData()
+	} else {
+		currentPage.value = 1
+	}
+}
+
 const fetchReportData = async () => {
 	if (!BX24) {
 		error.value = "BX24 object is not available."
@@ -257,6 +291,8 @@ const fetchReportData = async () => {
 		filter["<=CLOSED_DATE"] = dateRange.value.end
 	}
 
+	const start = (currentPage.value - 1) * pageSize
+
 	try {
 		BX24.callMethod(
 			"tasks.task.list",
@@ -271,6 +307,7 @@ const fetchReportData = async () => {
 					"TIME_SPENT_IN_LOGS",
 				],
 				filter: filter,
+				start: start,
 			},
 			res => {
 				const B24error = res.error ? res.error() : null
@@ -282,6 +319,7 @@ const fetchReportData = async () => {
 				} else {
 					// The API returns tasks under a 'tasks' property in the data object
 					rawTasks.value = res.data().tasks || []
+					totalFromApi.value = res.total ? res.total() : 0
 				}
 				loading.value = false
 			}
@@ -316,7 +354,27 @@ const fetchInitialData = async () => {
 	}
 }
 
+// --- Lifecycle Hooks ---
 onMounted(() => {
+	// Set default date range to the last month
+	const today = new Date()
+	const oneMonthAgo = new Date(today)
+	oneMonthAgo.setMonth(today.getMonth() - 1)
+
+	const formatDate = date => date.toISOString().split("T")[0]
+
+	dateRange.value = {
+		start: formatDate(oneMonthAgo),
+		end: formatDate(today),
+	}
+
 	fetchInitialData()
 })
+
+// Watch for page changes to fetch new data
+watch(currentPage, fetchReportData)
 </script>
+
+<style>
+/* Global styles if needed */
+</style>
