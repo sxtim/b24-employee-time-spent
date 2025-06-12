@@ -9,6 +9,7 @@
 	},
 	"dependencies": {
 		"@mdi/font": "^7.4.47",
+		"b24-app-template": "file:..",
 		"vue": "^3.4.21",
 		"vuetify": "^3.5.8"
 	},

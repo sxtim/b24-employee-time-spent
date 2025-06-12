@@ -5,9 +5,15 @@ import { initBX24 } from "./utils/bx24"
 // Vuetify
 import "@mdi/font/css/materialdesignicons.css" // Import MDI icons
 import { createVuetify } from "vuetify"
+import { ru as ruLocale } from "vuetify/locale"
 import "vuetify/styles"
 
-const vuetify = createVuetify() // The vite-plugin-vuetify will handle components and directives
+const vuetify = createVuetify({
+	locale: {
+		locale: "ru",
+		messages: { ru: ruLocale },
+	},
+})
 
 // Initialize the Bitrix24 API and then mount the app
 initBX24()

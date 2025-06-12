@@ -1,11 +1,14 @@
 <template>
 	<v-card>
-		<v-card-title class="pb-4"
-			>Отчет по затраченному времени сотрудника</v-card-title
-		>
+		<v-card-title class="pb-4 d-flex align-center">
+			Отчет по затраченному времени сотрудника
+			<v-icon class="ml-2" size="small" @click="faqDialog = true">
+				mdi-information-outline
+			</v-icon>
+		</v-card-title>
 		<v-card-text>
 			<!-- Filters -->
-			<v-row>
+			<v-row align="center">
 				<v-col cols="12" sm="6" md="3">
 					<v-autocomplete
 						label="Сотрудник"
@@ -42,32 +45,55 @@
 						closable-chips
 					></v-select>
 				</v-col>
-				<v-col cols="12" sm="6" md="2">
-					<v-text-field
-						label="Завершение с"
-						v-model="dateRange.start"
-						type="date"
-						clearable
-					></v-text-field>
-				</v-col>
-				<v-col cols="12" sm="6" md="2">
-					<v-text-field
-						label="Завершение по"
-						v-model="dateRange.end"
-						type="date"
-						clearable
-					></v-text-field>
-				</v-col>
-				<v-col cols="12" md="2" class="d-flex align-center">
-					<v-btn color="primary" @click="generateNewReport" block
-						>Сформировать</v-btn
+				<v-col cols="12" sm="12" md="4" style="max-width: 360px">
+					<v-menu
+						v-model="dateMenu"
+						:close-on-content-click="false"
+						transition="scale-transition"
+						min-width="auto"
+						max-width="360px"
+						@update:model-value="onDateMenuToggle"
 					>
+						<template v-slot:activator="{ props }">
+							<v-text-field
+								v-bind="props"
+								:model-value="formattedDateRange"
+								label="Период завершения задачи"
+								prepend-icon="mdi-calendar"
+								readonly
+								clearable
+								@click:clear="dateRange = []"
+								style="width: 360px; max-width: 360px"
+								class="date-picker-field"
+							></v-text-field>
+						</template>
+						<v-card
+							style="width: 100%; max-width: 360px; box-sizing: border-box"
+						>
+							<v-card-text>
+								<v-date-picker
+									v-model="tempDateRange"
+									multiple="range"
+									color="primary"
+									show-adjacent-months
+									:first-day-of-week="1"
+									hide-header
+									locale="ru"
+									:day-format="date => new Date(date).getDate()"
+									style="width: 100%; max-width: 360px; box-sizing: border-box"
+								></v-date-picker>
+							</v-card-text>
+							<v-card-actions>
+								<v-spacer></v-spacer>
+								<v-btn variant="text" @click="dateMenu = false"> Отмена </v-btn>
+								<v-btn color="primary" variant="text" @click="applyDateRange">
+									Применить
+								</v-btn>
+							</v-card-actions>
+						</v-card>
+					</v-menu>
 				</v-col>
-			</v-row>
-
-			<!-- Mode Toggle -->
-			<v-row class="mt-0 mb-4 justify-end">
-				<v-col cols="auto">
+				<v-col cols="12" sm="12" md="auto" class="d-flex justify-end">
 					<v-btn-toggle v-model="reportMode" mandatory density="compact">
 						<v-btn value="byTask">По задачам</v-btn>
 						<v-btn value="byEmployee">По сотрудникам</v-btn>
@@ -76,44 +102,90 @@
 			</v-row>
 
 			<!-- Data Table -->
-			<v-data-table
+			<v-data-table-server
+				v-model:items-per-page="itemsPerPage"
 				:headers="currentHeaders"
 				:items="reportData"
+				:items-length="totalFromApi"
 				:loading="loading"
+				:search="searchTrigger"
+				@update:options="loadReportItems"
 				class="elevation-1"
 				item-value="id"
+				:items-per-page-options="itemsPerPageOptions"
+				:style="tableStyle"
 			>
 				<template v-slot:loading>
 					<v-skeleton-loader type="table-row@5"></v-skeleton-loader>
 				</template>
+			</v-data-table-server>
 
-				<template v-slot:bottom>
-					<v-footer class="pa-2 mt-4">
-						<v-row justify="end" class="font-weight-bold">
-							<v-col cols="auto">Общий итог:</v-col>
-							<v-col cols="2">Запланировано: {{ totalPlanned }} ч</v-col>
-							<v-col cols="2">Затрачено: {{ totalActual }} ч</v-col>
-							<v-col cols="2">Всего задач: {{ totalTasks }}</v-col>
-						</v-row>
-					</v-footer>
-				</template>
-			</v-data-table>
-
-			<!-- Pagination -->
-			<v-row justify="center" class="mt-4">
-				<v-col cols="auto">
-					<v-pagination
-						v-model="currentPage"
-						:length="pageCount"
-						:total-visible="7"
-					></v-pagination>
-				</v-col>
-			</v-row>
+			<!-- Summary Information for Tasks -->
+			<v-card-text v-if="reportMode === 'byTask'" class="pa-2 mt-4">
+				<v-row justify="end" class="font-weight-bold">
+					<v-col cols="auto">Общий итог:</v-col>
+					<v-col cols="2">Запланировано: {{ totalPlanned }} ч</v-col>
+					<v-col cols="2">Затрачено: {{ totalActual }} ч</v-col>
+					<v-col cols="2">Всего задач: {{ totalTasks }}</v-col>
+				</v-row>
+			</v-card-text>
 		</v-card-text>
 
 		<v-alert v-if="error" type="error" dense>
 			{{ error }}
 		</v-alert>
+
+		<v-dialog v-model="faqDialog" max-width="600px">
+			<v-card>
+				<v-card-title>
+					<span class="text-h5">Справка по работе с отчетом</span>
+				</v-card-title>
+				<v-card-text>
+					<p>
+						Это приложение предназначено для формирования отчетов по
+						затраченному времени на основе данных из вашего Битрикс24.
+					</p>
+					<br />
+					<p><strong>Режимы отчета:</strong></p>
+					<ul>
+						<li>
+							<strong>По задачам:</strong> Детальный отчет, где каждая строка -
+							это отдельная задача. Отображаются плановые и фактические
+							трудозатраты по каждой задаче.
+						</li>
+						<li>
+							<strong>По сотрудникам:</strong> Сводный отчет, группирующий все
+							задачи по исполнителям. Показывает общее количество задач,
+							суммарное плановое и фактическое время для каждого сотрудника.
+						</li>
+					</ul>
+					<br />
+					<p><strong>Фильтры:</strong></p>
+					<ul>
+						<li>
+							<strong>Сотрудник:</strong> Выберите одного или нескольких
+							сотрудников для фильтрации отчета.
+						</li>
+						<li>
+							<strong>Статус задачи:</strong> Фильтрация по текущему статусу
+							задач (Новая, Выполняется, Завершена и т.д.).
+						</li>
+						<li>
+							<strong>Период завершения задачи:</strong> Укажите диапазон дат, в
+							который задачи были завершены.
+						</li>
+					</ul>
+					<br />
+					<p>
+						Отчет обновляется автоматически при изменении любого из фильтров.
+					</p>
+				</v-card-text>
+				<v-card-actions>
+					<v-spacer></v-spacer>
+					<v-btn color="primary" text @click="faqDialog = false">Закрыть</v-btn>
+				</v-card-actions>
+			</v-card>
+		</v-dialog>
 	</v-card>
 </template>
 
@@ -136,20 +208,65 @@ const getDaysBetween = (startDate, endDate) => {
 }
 
 // --- State ---
-const loading = ref(false)
+const loading = ref(true)
 const error = ref(null)
 const BX24 = inject("BX24")
 
-// Pagination State
-const currentPage = ref(1)
+// --- Table and Data State ---
+const itemsPerPage = ref(10)
+const itemsPerPageOptions = [
+	{ value: 10, title: "10" },
+	{ value: 25, title: "25" },
+	{ value: 50, title: "50" },
+]
 const totalFromApi = ref(0)
-const pageSize = 50 // Bitrix24 API returns 50 items per page by default
+const searchTrigger = ref(0)
+const cache = ref({})
+const faqDialog = ref(false)
 
 // Filters and Mode
 const reportMode = ref("byTask") // 'byTask' or 'byEmployee'
 const selectedEmployees = ref([])
 const selectedStatuses = ref([])
-const dateRange = ref({ start: null, end: null })
+const dateRange = ref([])
+const tempDateRange = ref([])
+const dateMenu = ref(false)
+
+const onDateMenuToggle = isOpen => {
+	if (isOpen) {
+		// Clone the array to avoid reactivity issues
+		tempDateRange.value = [...dateRange.value]
+	}
+}
+
+const applyDateRange = () => {
+	dateRange.value = [...tempDateRange.value]
+	dateMenu.value = false
+}
+
+// Форматирование диапазона дат для отображения
+const formattedDateRange = computed(() => {
+	if (!dateRange.value || dateRange.value.length === 0) {
+		return ""
+	}
+
+	// Функция для форматирования даты в формат ДД.ММ.ГГГГ
+	const formatDate = dateString => {
+		const date = new Date(dateString)
+		return date.toLocaleDateString("ru-RU", {
+			day: "2-digit",
+			month: "2-digit",
+			year: "numeric",
+		})
+	}
+
+	if (dateRange.value.length === 1) {
+		return formatDate(dateRange.value[0])
+	}
+	return `${formatDate(dateRange.value[0])} — ${formatDate(
+		dateRange.value[dateRange.value.length - 1]
+	)}`
+})
 
 // Data
 const rawTasks = ref([]) // Raw data from Bitrix24
@@ -230,73 +347,86 @@ const totalActual = computed(() => {
 
 const totalTasks = computed(() => totalFromApi.value)
 
-const pageCount = computed(() => {
-	if (totalFromApi.value === 0) return 1
-	return Math.ceil(totalFromApi.value / pageSize)
-})
+const headersByTask = [
+	{ title: "Задача", key: "task", sortable: false },
+	{ title: "Сотрудник", key: "employee", sortable: false },
+	{ title: "План (ч)", key: "planned", sortable: false },
+	{ title: "Факт (ч)", key: "actual", sortable: false },
+	{ title: "Дней на выполнение", key: "days", sortable: false },
+]
 
-const headersByTask = ref([
-	{ title: "Задача", key: "task" },
-	{ title: "Сотрудник", key: "employee" },
-	{ title: "План (ч)", key: "planned" },
-	{ title: "Факт (ч)", key: "actual" },
-	{ title: "Дней на выполнение", key: "days" },
-])
-
-const headersByEmployee = ref([
-	{ title: "Сотрудник", key: "employee" },
-	{ title: "Задачи", key: "taskCount" },
-	{ title: "План (ч)", key: "planned" },
-	{ title: "Факт (ч)", key: "actual" },
-])
+const headersByEmployee = [
+	{ title: "Сотрудник", key: "employee", sortable: false },
+	{ title: "Задачи", key: "taskCount", sortable: false },
+	{ title: "План (ч)", key: "planned", sortable: false },
+	{ title: "Факт (ч)", key: "actual", sortable: false },
+]
 
 const currentHeaders = computed(() => {
-	return reportMode.value === "byTask"
-		? headersByTask.value
-		: headersByEmployee.value
+	return reportMode.value === "byTask" ? headersByTask : headersByEmployee
+})
+
+const tableStyle = computed(() => {
+	// Approximate heights for Vuetify components to calculate min-height
+	const headerHeight = 56 // v-table header
+	const rowHeight = 52 // v-table row with default density
+	const footerHeight = 59 // v-data-table-footer
+	const minHeight = headerHeight + itemsPerPage.value * rowHeight + footerHeight
+	return { minHeight: `${minHeight}px` }
 })
 
 // --- Methods ---
 
-const generateNewReport = () => {
-	// Reset to page 1 for a new report.
-	// If already on page 1, fetch directly. Otherwise, the watcher will trigger the fetch.
-	if (currentPage.value === 1) {
-		fetchReportData()
-	} else {
-		currentPage.value = 1
-	}
+// Promisify BX24.callMethod to use with async/await
+const callB24Method = (method, params) => {
+	return new Promise((resolve, reject) => {
+		if (!BX24) {
+			return reject("BX24 object is not available.")
+		}
+		BX24.callMethod(method, params, res => {
+			const b24Error = res.error ? res.error() : null
+			if (b24Error) {
+				console.error("B24 Error:", b24Error)
+				reject(new Error(b24Error.error_description || "Bitrix24 API error"))
+			} else {
+				resolve(res)
+			}
+		})
+	})
 }
 
-const fetchReportData = async () => {
-	if (!BX24) {
-		error.value = "BX24 object is not available."
-		return
-	}
+const generateNewReport = () => {
+	cache.value = {} // Clear cache on new report
+	searchTrigger.value += 1
+}
+
+const loadReportItems = async ({ page, itemsPerPage, sortBy }) => {
 	loading.value = true
 	error.value = null
-	rawTasks.value = []
 
-	const filter = {}
-	if (selectedEmployees.value.length > 0) {
-		filter.RESPONSIBLE_ID = selectedEmployees.value
-	}
-	if (selectedStatuses.value.length > 0) {
-		filter.STATUS = selectedStatuses.value
-	}
-	if (dateRange.value.start) {
-		filter[">=CLOSED_DATE"] = dateRange.value.start
-	}
-	if (dateRange.value.end) {
-		filter["<=CLOSED_DATE"] = dateRange.value.end
-	}
-
-	const start = (currentPage.value - 1) * pageSize
+	const startOffset = (page - 1) * itemsPerPage
+	const b24PageStart = Math.floor(startOffset / 50) * 50
 
 	try {
-		BX24.callMethod(
-			"tasks.task.list",
-			{
+		// Fetch from Bitrix24 API only if the page is not in cache
+		if (!cache.value[b24PageStart]) {
+			const filter = {}
+			if (selectedEmployees.value.length > 0) {
+				filter.RESPONSIBLE_ID = selectedEmployees.value
+			}
+			if (selectedStatuses.value.length > 0) {
+				filter.STATUS = selectedStatuses.value
+			}
+			if (dateRange.value && dateRange.value.length > 0) {
+				if (dateRange.value.length >= 1) {
+					filter[">=CLOSED_DATE"] = dateRange.value[0]
+				}
+				if (dateRange.value.length >= 2) {
+					filter["<=CLOSED_DATE"] = dateRange.value[dateRange.value.length - 1]
+				}
+			}
+
+			const res = await callB24Method("tasks.task.list", {
 				select: [
 					"ID",
 					"TITLE",
@@ -307,26 +437,25 @@ const fetchReportData = async () => {
 					"TIME_SPENT_IN_LOGS",
 				],
 				filter: filter,
-				start: start,
-			},
-			res => {
-				const B24error = res.error ? res.error() : null
-				if (B24error) {
-					console.error("B24 Error:", B24error)
-					error.value = `Не удалось загрузить задачи. ${
-						B24error.error_description || ""
-					}`
-				} else {
-					// The API returns tasks under a 'tasks' property in the data object
-					rawTasks.value = res.data().tasks || []
-					totalFromApi.value = res.total ? res.total() : 0
-				}
-				loading.value = false
+				start: b24PageStart,
+			})
+
+			cache.value[b24PageStart] = res.data().tasks || []
+			if (page === 1) {
+				totalFromApi.value = res.total() || 0
 			}
-		)
+		}
+
+		const cachedPage = cache.value[b24PageStart] || []
+		const sliceStart = startOffset % 50
+		const sliceEnd = sliceStart + itemsPerPage
+		rawTasks.value = cachedPage.slice(sliceStart, sliceEnd)
 	} catch (e) {
-		console.error("Failed to call B24 method:", e)
-		error.value = "Ошибка при запросе задач."
+		console.error("Failed to load report items:", e)
+		error.value = e.message || "Ошибка при загрузке отчета."
+		rawTasks.value = []
+		// Do not reset totalFromApi here to avoid pagination collapse on error
+	} finally {
 		loading.value = false
 	}
 }
@@ -354,27 +483,35 @@ const fetchInitialData = async () => {
 	}
 }
 
-// --- Lifecycle Hooks ---
+watch(
+	[selectedEmployees, selectedStatuses, dateRange, reportMode],
+	() => {
+		generateNewReport()
+	},
+	{ deep: true }
+)
+
 onMounted(() => {
-	// Set default date range to the last month
-	const today = new Date()
-	const oneMonthAgo = new Date(today)
-	oneMonthAgo.setMonth(today.getMonth() - 1)
-
-	const formatDate = date => date.toISOString().split("T")[0]
-
-	dateRange.value = {
-		start: formatDate(oneMonthAgo),
-		end: formatDate(today),
-	}
-
 	fetchInitialData()
 })
-
-// Watch for page changes to fetch new data
-watch(currentPage, fetchReportData)
 </script>
 
 <style>
 /* Global styles if needed */
+.v-row {
+	justify-content: space-between;
+}
+.v-card .v-card-text {
+	padding: 16px; /* Re-add default padding, can be overridden by utility classes */
+}
+
+/* Стили для иконки календаря */
+.date-picker-field .v-input__prepend .mdi-calendar {
+	color: var(--v-theme-primary);
+	font-size: 20px;
+}
+
+.v-input__prepend {
+	margin-right: 0 !important;
+}
 </style>

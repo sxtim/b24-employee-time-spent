@@ -24,35 +24,25 @@ const createMockBx24 = () => {
 		},
 	]
 
-	const mockTasks = [
-		{
-			id: "101",
-			title: "Разработать главный экран",
-			responsibleId: "1",
-			timeEstimate: "7200", // 2 hours
-			timeSpentInLogs: "9000", // 2.5 hours
-			createdDate: "2024-05-01T10:00:00Z",
-			closedDate: "2024-05-03T15:00:00Z",
-		},
-		{
-			id: "102",
-			title: "Написать API для отчетов",
-			responsibleId: "2",
-			timeEstimate: "14400", // 4 hours
-			timeSpentInLogs: "12600", // 3.5 hours
-			createdDate: "2024-05-02T11:00:00Z",
-			closedDate: "2024-05-05T18:00:00Z",
-		},
-		{
-			id: "103",
-			title: "Тестирование модуля авторизации",
-			responsibleId: "1",
-			timeEstimate: "3600", // 1 hour
-			timeSpentInLogs: "4500", // 1.25 hours
-			createdDate: "2024-05-04T09:00:00Z",
-			closedDate: "2024-05-04T12:00:00Z",
-		},
-	]
+	const mockTasks = Array.from({ length: 173 }, (_, i) => {
+		const responsibleId = String((i % 3) + 1)
+		const created = new Date(2024, 4, 1 + (i % 30))
+		const closed = new Date(created)
+		closed.setDate(created.getDate() + (i % 5) + 1)
+
+		return {
+			id: `${101 + i}`,
+			title: `Задача ${101 + i}: ${
+				i % 2 === 0 ? "Разработка" : "Тестирование"
+			} модуля ${String.fromCharCode(65 + (i % 10))}`,
+			responsibleId: responsibleId,
+			timeEstimate: String(3600 * ((i % 4) + 1)), // 1 to 4 hours
+			timeSpentInLogs: String(3600 * ((i % 4) + 0.5)), // 0.5 to 3.5 hours
+			createdDate: created.toISOString(),
+			closedDate: closed.toISOString(),
+			status: String((i % 4) + 2), // Mock status
+		}
+	})
 
 	return {
 		callMethod: (method, params, callback) => {
@@ -64,9 +54,54 @@ const createMockBx24 = () => {
 			if (method === "user.get") {
 				result = mockUsers
 			} else if (method === "tasks.task.list") {
+				console.log("[MOCK] tasks.task.list with params:", params)
+
+				let filteredTasks = mockTasks
+
+				// Mock filtering by responsible ID
+				if (params.filter && params.filter.RESPONSIBLE_ID) {
+					const responsibleIds = Array.isArray(params.filter.RESPONSIBLE_ID)
+						? params.filter.RESPONSIBLE_ID
+						: [params.filter.RESPONSIBLE_ID]
+					filteredTasks = filteredTasks.filter(task =>
+						responsibleIds.includes(task.responsibleId)
+					)
+				}
+
+				// Mock filtering by status
+				if (params.filter && params.filter.STATUS) {
+					const statuses = Array.isArray(params.filter.STATUS)
+						? params.filter.STATUS
+						: [params.filter.STATUS]
+					filteredTasks = filteredTasks.filter(task =>
+						statuses.includes(task.status)
+					)
+				}
+
+				// Mock filtering by date range
+				if (params.filter && params.filter[">=CLOSED_DATE"]) {
+					const startDate = new Date(params.filter[">=CLOSED_DATE"])
+					filteredTasks = filteredTasks.filter(
+						task => new Date(task.closedDate) >= startDate
+					)
+				}
+				if (params.filter && params.filter["<=CLOSED_DATE"]) {
+					const endDate = new Date(params.filter["<=CLOSED_DATE"])
+					filteredTasks = filteredTasks.filter(
+						task => new Date(task.closedDate) <= endDate
+					)
+				}
+
+				total = filteredTasks.length
 				const start = params.start || 0
-				result = { tasks: mockTasks.slice(start, start + 50) }
-				total = mockTasks.length
+				const limit = params.limit || 50
+				const paginatedTasks = filteredTasks.slice(start, start + limit)
+
+				console.log(
+					`[MOCK] Slicing tasks. Start: ${start}, Limit: ${limit}. Returning ${paginatedTasks.length} of ${total} tasks.`
+				)
+
+				result = { tasks: paginatedTasks }
 			} else {
 				error = () => ({
 					error: "METHOD_NOT_FOUND",
