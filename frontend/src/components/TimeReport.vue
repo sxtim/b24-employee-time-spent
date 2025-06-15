@@ -101,34 +101,23 @@
 				</v-col>
 			</v-row>
 
-			<!-- Data Table -->
-			<v-data-table-server
-				v-model:items-per-page="itemsPerPage"
-				:headers="currentHeaders"
-				:items="reportData"
-				:items-length="totalFromApi"
-				:loading="loading"
-				:search="searchTrigger"
-				@update:options="loadReportItems"
-				class="elevation-1"
-				item-value="id"
-				:items-per-page-options="itemsPerPageOptions"
-				:style="tableStyle"
-			>
-				<template v-slot:loading>
-					<v-skeleton-loader type="table-row@5"></v-skeleton-loader>
-				</template>
-			</v-data-table-server>
+			<!-- Отчет по задачам -->
+			<div v-if="reportMode === 'byTask'">
+				<TaskReport
+					:taskFilters="taskFilters"
+					:userMap="userMap"
+					:loading="loading"
+				/>
+			</div>
 
-			<!-- Summary Information for Tasks -->
-			<v-card-text v-if="reportMode === 'byTask'" class="pa-2 mt-4">
-				<v-row justify="end" class="font-weight-bold">
-					<v-col cols="auto">Общий итог:</v-col>
-					<v-col cols="2">Запланировано: {{ totalPlanned }} ч</v-col>
-					<v-col cols="2">Затрачено: {{ totalActual }} ч</v-col>
-					<v-col cols="2">Всего задач: {{ totalTasks }}</v-col>
-				</v-row>
-			</v-card-text>
+			<!-- Отчет по сотрудникам -->
+			<div v-else>
+				<EmployeeReport
+					:taskFilters="taskFilters"
+					:userMap="userMap"
+					:loading="loading"
+				/>
+			</div>
 		</v-card-text>
 
 		<v-alert v-if="error" type="error" dense>
@@ -190,39 +179,24 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, ref, watch } from "vue"
+import { computed, inject, onMounted, ref } from "vue"
+import EmployeeReport from "./reports/EmployeeReport.vue"
+import TaskReport from "./reports/TaskReport.vue"
 
 // --- Helper Functions ---
-const formatHours = seconds => {
-	if (!seconds) return 0
-	return Math.round(seconds / 3600)
-}
-
-const getDaysBetween = (startDate, endDate) => {
-	if (!startDate || !endDate) return "N/A"
-	const start = new Date(startDate)
-	const end = new Date(endDate)
-	const diffTime = Math.abs(end - start)
-	const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-	return diffDays
+const formatDate = dateString => {
+	const date = new Date(dateString)
+	return date.toLocaleDateString("ru-RU", {
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+	})
 }
 
 // --- State ---
-const loading = ref(true)
+const loading = ref(false)
 const error = ref(null)
 const BX24 = inject("BX24")
-
-// --- Table and Data State ---
-const itemsPerPage = ref(10)
-const itemsPerPageOptions = [
-	{ value: 10, title: "10" },
-	{ value: 25, title: "25" },
-	{ value: 50, title: "50" },
-]
-const totalFromApi = ref(0)
-const searchTrigger = ref(0)
-const cache = ref({})
-const faqDialog = ref(false)
 
 // Filters and Mode
 const reportMode = ref("byTask") // 'byTask' or 'byEmployee'
@@ -231,6 +205,7 @@ const selectedStatuses = ref([])
 const dateRange = ref([])
 const tempDateRange = ref([])
 const dateMenu = ref(false)
+const faqDialog = ref(false)
 
 const onDateMenuToggle = isOpen => {
 	if (isOpen) {
@@ -250,16 +225,6 @@ const formattedDateRange = computed(() => {
 		return ""
 	}
 
-	// Функция для форматирования даты в формат ДД.ММ.ГГГГ
-	const formatDate = dateString => {
-		const date = new Date(dateString)
-		return date.toLocaleDateString("ru-RU", {
-			day: "2-digit",
-			month: "2-digit",
-			year: "numeric",
-		})
-	}
-
 	if (dateRange.value.length === 1) {
 		return formatDate(dateRange.value[0])
 	}
@@ -269,7 +234,6 @@ const formattedDateRange = computed(() => {
 })
 
 // Data
-const rawTasks = ref([]) // Raw data from Bitrix24
 const allUsers = ref([]) // For employee filter
 const taskStatuses = ref([
 	{ title: "Новая", value: "2" },
@@ -279,103 +243,37 @@ const taskStatuses = ref([
 	{ title: "Отложена", value: "6" },
 ])
 
-// --- Computed Properties for Table ---
+// Общие фильтры для передачи в дочерние компоненты
+const taskFilters = computed(() => {
+	const filters = {}
 
+	if (selectedEmployees.value.length > 0) {
+		filters.RESPONSIBLE_ID = selectedEmployees.value
+	}
+
+	if (selectedStatuses.value.length > 0) {
+		filters.STATUS = selectedStatuses.value
+	}
+
+	if (dateRange.value && dateRange.value.length > 0) {
+		if (dateRange.value.length >= 1) {
+			filters[">=CLOSED_DATE"] = dateRange.value[0]
+		}
+		if (dateRange.value.length >= 2) {
+			filters["<=CLOSED_DATE"] = dateRange.value[dateRange.value.length - 1]
+		}
+	}
+
+	return filters
+})
+
+// --- Computed Properties for Table ---
 const userMap = computed(() => {
 	return allUsers.value.reduce((acc, user) => {
 		acc[user.ID] = user.name
 		return acc
 	}, {})
 })
-
-const reportData = computed(() => {
-	if (reportMode.value === "byTask") {
-		return rawTasks.value.map(task => ({
-			id: `task-${task.id}`, // Unique key for v-data-table
-			task: task.title,
-			employee: userMap.value[task.responsibleId] || "Не назначен",
-			planned: formatHours(task.timeEstimate),
-			actual: formatHours(task.timeSpentInLogs),
-			days: getDaysBetween(task.createdDate, task.closedDate),
-		}))
-	} else {
-		// Group by employee
-		const byEmployee = rawTasks.value.reduce((acc, task) => {
-			const employeeId = task.responsibleId
-			if (!acc[employeeId]) {
-				acc[employeeId] = {
-					id: `emp-${employeeId}`, // Unique key for v-data-table
-					employee: userMap.value[employeeId] || "Не назначен",
-					taskCount: 0,
-					planned: 0,
-					actual: 0,
-				}
-			}
-			acc[employeeId].taskCount++
-			acc[employeeId].planned += task.timeEstimate
-				? parseInt(task.timeEstimate)
-				: 0
-			acc[employeeId].actual += task.timeSpentInLogs
-				? parseInt(task.timeSpentInLogs)
-				: 0
-			return acc
-		}, {})
-		return Object.values(byEmployee).map(emp => ({
-			...emp,
-			planned: formatHours(emp.planned),
-			actual: formatHours(emp.actual),
-		}))
-	}
-})
-
-const totalPlanned = computed(() => {
-	const totalSeconds = rawTasks.value.reduce(
-		(sum, task) => sum + (task.timeEstimate ? parseInt(task.timeEstimate) : 0),
-		0
-	)
-	return formatHours(totalSeconds)
-})
-
-const totalActual = computed(() => {
-	const totalSeconds = rawTasks.value.reduce(
-		(sum, task) =>
-			sum + (task.timeSpentInLogs ? parseInt(task.timeSpentInLogs) : 0),
-		0
-	)
-	return formatHours(totalSeconds)
-})
-
-const totalTasks = computed(() => totalFromApi.value)
-
-const headersByTask = [
-	{ title: "Задача", key: "task", sortable: false },
-	{ title: "Сотрудник", key: "employee", sortable: false },
-	{ title: "План (ч)", key: "planned", sortable: false },
-	{ title: "Факт (ч)", key: "actual", sortable: false },
-	{ title: "Дней на выполнение", key: "days", sortable: false },
-]
-
-const headersByEmployee = [
-	{ title: "Сотрудник", key: "employee", sortable: false },
-	{ title: "Задачи", key: "taskCount", sortable: false },
-	{ title: "План (ч)", key: "planned", sortable: false },
-	{ title: "Факт (ч)", key: "actual", sortable: false },
-]
-
-const currentHeaders = computed(() => {
-	return reportMode.value === "byTask" ? headersByTask : headersByEmployee
-})
-
-const tableStyle = computed(() => {
-	// Approximate heights for Vuetify components to calculate min-height
-	const headerHeight = 56 // v-table header
-	const rowHeight = 52 // v-table row with default density
-	const footerHeight = 59 // v-data-table-footer
-	const minHeight = headerHeight + itemsPerPage.value * rowHeight + footerHeight
-	return { minHeight: `${minHeight}px` }
-})
-
-// --- Methods ---
 
 // Promisify BX24.callMethod to use with async/await
 const callB24Method = (method, params) => {
@@ -395,76 +293,13 @@ const callB24Method = (method, params) => {
 	})
 }
 
-const generateNewReport = () => {
-	cache.value = {} // Clear cache on new report
-	searchTrigger.value += 1
-}
-
-const loadReportItems = async ({ page, itemsPerPage, sortBy }) => {
-	loading.value = true
-	error.value = null
-
-	const startOffset = (page - 1) * itemsPerPage
-	const b24PageStart = Math.floor(startOffset / 50) * 50
-
-	try {
-		// Fetch from Bitrix24 API only if the page is not in cache
-		if (!cache.value[b24PageStart]) {
-			const filter = {}
-			if (selectedEmployees.value.length > 0) {
-				filter.RESPONSIBLE_ID = selectedEmployees.value
-			}
-			if (selectedStatuses.value.length > 0) {
-				filter.STATUS = selectedStatuses.value
-			}
-			if (dateRange.value && dateRange.value.length > 0) {
-				if (dateRange.value.length >= 1) {
-					filter[">=CLOSED_DATE"] = dateRange.value[0]
-				}
-				if (dateRange.value.length >= 2) {
-					filter["<=CLOSED_DATE"] = dateRange.value[dateRange.value.length - 1]
-				}
-			}
-
-			const res = await callB24Method("tasks.task.list", {
-				select: [
-					"ID",
-					"TITLE",
-					"RESPONSIBLE_ID",
-					"CREATED_DATE",
-					"CLOSED_DATE",
-					"TIME_ESTIMATE",
-					"TIME_SPENT_IN_LOGS",
-				],
-				filter: filter,
-				start: b24PageStart,
-			})
-
-			cache.value[b24PageStart] = res.data().tasks || []
-			if (page === 1) {
-				totalFromApi.value = res.total() || 0
-			}
-		}
-
-		const cachedPage = cache.value[b24PageStart] || []
-		const sliceStart = startOffset % 50
-		const sliceEnd = sliceStart + itemsPerPage
-		rawTasks.value = cachedPage.slice(sliceStart, sliceEnd)
-	} catch (e) {
-		console.error("Failed to load report items:", e)
-		error.value = e.message || "Ошибка при загрузке отчета."
-		rawTasks.value = []
-		// Do not reset totalFromApi here to avoid pagination collapse on error
-	} finally {
-		loading.value = false
-	}
-}
-
 const fetchInitialData = async () => {
 	if (!BX24) {
 		error.value = "BX24 object is not available."
 		return
 	}
+
+	loading.value = true
 	try {
 		BX24.callMethod("user.get", { ACTIVE: true }, result => {
 			if (result.error()) {
@@ -480,16 +315,10 @@ const fetchInitialData = async () => {
 	} catch (err) {
 		console.error(err)
 		error.value = "Ошибка при запросе списка сотрудников."
+	} finally {
+		loading.value = false
 	}
 }
-
-watch(
-	[selectedEmployees, selectedStatuses, dateRange, reportMode],
-	() => {
-		generateNewReport()
-	},
-	{ deep: true }
-)
 
 onMounted(() => {
 	fetchInitialData()
