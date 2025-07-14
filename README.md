@@ -41,5 +41,5 @@
 - Общее количество задач
 
 
-- **Стек:** Vue.js (Frontend), Node.js (Backend), Docker, Bitrix24 REST API.
-- **Срок разработки:** 8 дней.
+## Стек: Vue.js (Frontend), Node.js (Backend), Docker, Bitrix24 REST API.
+## Срок разработки: 8 дней.
